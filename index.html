@@ -82,6 +82,7 @@ body {
 .page-title { font-size: 1.25rem; font-weight: 700; color: var(--navy); letter-spacing: -0.02em; }
 .page-subtitle { font-size: 0.82rem; color: var(--text3); margin-top: 2px; }
 
+.filter-group { display: flex; gap: 12px; align-items: center; }
 .filter-pills { display: flex; gap: 6px; background: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 4px; }
 .pill { padding: 5px 14px; border-radius: 5px; border: none; background: none; font-family: var(--font); font-size: 0.78rem; font-weight: 500; color: var(--text2); cursor: pointer; transition: all 0.15s; }
 .pill.active { background: var(--navy); color: #fff; }
@@ -335,10 +336,16 @@ textarea.f-input { resize: vertical; min-height: 78px; }
           <div class="page-title">Solicitações</div>
           <div class="page-subtitle">Mais antigos no topo · insira o código para concluir</div>
         </div>
-        <div class="filter-pills">
-          <button class="pill active" onclick="setFilter('all',this)">Todos</button>
-          <button class="pill" onclick="setFilter('pending',this)">Pendentes</button>
-          <button class="pill" onclick="setFilter('done',this)">Concluídos</button>
+        <div class="filter-group">
+          <div class="filter-pills" id="op-scope-filter" style="display:none">
+            <button class="pill active" id="pill-my-sector" onclick="setOpScope('sector')">Meu Setor</button>
+            <button class="pill" id="pill-all-sectors" onclick="setOpScope('all')">Todos Setores</button>
+          </div>
+          <div class="filter-pills">
+            <button class="pill active" onclick="setFilter('all',this)">Todos</button>
+            <button class="pill" onclick="setFilter('pending',this)">Pendentes</button>
+            <button class="pill" onclick="setFilter('done',this)">Concluídos</button>
+          </div>
         </div>
       </div>
       <div id="notif-banner" class="notif-banner hidden">
@@ -545,6 +552,7 @@ let me = null;
 let activeTab = '';
 let activeFilter = 'all';
 let activeSubTab = 'form';
+let opScope = 'sector'; 
 const alerted5 = new Set();
 const alerted10 = new Set();
 let ordersSubscription = null;
@@ -616,6 +624,14 @@ function openApp() {
   document.getElementById('u-name').textContent = me.nome;
   document.getElementById('u-role').textContent = roleLabel(me.role);
   document.getElementById('u-avatar').textContent = me.nome[0].toUpperCase();
+  
+  const opFilter = document.getElementById('op-scope-filter');
+  if (me.role === 'operador' && me.setor) {
+      opFilter.style.display = 'flex';
+  } else {
+      opFilter.style.display = 'none';
+  }
+
   setupNav();
   renderCollabs();
   updateBadges();
@@ -679,6 +695,14 @@ function setFilter(f, btn) {
   loadOrdersAndRanking();
 }
 
+function setOpScope(scope) {
+    opScope = scope;
+    document.getElementById('pill-my-sector').classList.toggle('active', scope === 'sector');
+    document.getElementById('pill-all-sectors').classList.toggle('active', scope === 'all');
+    loadOrdersAndRanking();
+    updateBadges();
+}
+
 function subscribeOrders() {
   if (ordersSubscription) return;
   ordersSubscription = supabaseClient
@@ -691,7 +715,7 @@ function subscribeOrders() {
       if (me.role === 'adm') isRelevant = true;
       else if (me.role === 'solicitante' && order.owner === me.username) isRelevant = true;
       else if (me.role === 'operador') {
-        if (!order.setor || order.setor === "" || !me.setor || order.setor === me.setor) isRelevant = true;
+        if (opScope === 'all' || !order.setor || order.setor === "" || !me.setor || order.setor === me.setor) isRelevant = true;
       }
 
       if (isRelevant && activeTab === 'orders') { loadOrdersAndRanking(); }
@@ -711,7 +735,7 @@ async function loadOrdersAndRanking() {
   let query = supabaseClient.from('orders').select('id, created_at, done, produto, rua, predio, andar, ap, solicitante, setor, code');
   if (me.role === 'solicitante') { query = query.eq('owner', me.username); }
   else if (me.role === 'operador') {
-    if (me.setor) { query = query.or(`setor.is.null,setor.eq."",setor.eq.${me.setor}`); }
+    if (me.setor && opScope === 'sector') { query = query.or(`setor.is.null,setor.eq."",setor.eq.${me.setor}`); }
   }
   const { data, error } = await query.order('done', { ascending: true }).order('created_at', { ascending: true });
   if (error) return;
@@ -973,7 +997,7 @@ async function updateBadges() {
   if (!me) return;
   let q1 = supabaseClient.from('orders').select('id', { count: 'exact', head: true }).eq('done', false);
   if (me.role === 'solicitante') q1 = q1.eq('owner', me.username);
-  else if (me.role === 'operador' && me.setor) q1 = q1.or(`setor.is.null,setor.eq."",setor.eq.${me.setor}`);
+  else if (me.role === 'operador' && me.setor && opScope === 'sector') q1 = q1.or(`setor.is.null,setor.eq."",setor.eq.${me.setor}`);
   const { count: c1 } = await q1;
   const badgeOrders = document.getElementById('badge-orders');
   if (badgeOrders) badgeOrders.textContent = c1 || 0;
